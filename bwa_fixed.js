@@ -677,29 +677,32 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
         return [];
       }
     };
-    /*
-     * Playback resolver.
-     *
-     * `stream` is already a playable URL returned by Lampac for a native /
-     * external player. The original code used it only on Apple. On Android
-     * this forced method=call through RCH even when a direct stream existed.
-     * VK CDN links are particularly prone to failing on that extra hop.
-     *
-     * Keep the original resolver for the inner Lampa player.
-     */
+    function isVkCdnUrl(url) {
+      return typeof url === 'string' && /(?:^|\.)okcdn\.ru(?:[:\/]|$)|vkvd\d+\.okcdn\.ru/i.test(url);
+    }
+
+    function getPlayHeaders(file, json, json_call) {
+      var headers = {};
+      if (file && file.headers) headers = Lampa.Arrays.clone(file.headers);
+      if (file && file.stream_headers) headers = Lampa.Arrays.extend(headers, file.stream_headers);
+      if (json && json.headers) headers = Lampa.Arrays.extend(headers, json.headers);
+      if (json_call && json_call.headers) headers = Lampa.Arrays.extend(headers, json_call.headers);
+      return headers;
+    }
+
     this.getFileUrl = function(file, call, waiting_rch) {
     var _this = this;
-    var externalPlayer = Lampa.Storage.field('player') !== 'inner';
-    var nativePlatform = Lampa.Platform.is('android') || Lampa.Platform.is('apple');
-
-      if(externalPlayer && nativePlatform && file.stream){
+    
+      // Native Android player must not receive VK/OKCDN CDN URLs directly.
+      // Such URLs can be bound to the browser/IP/session that requested them and
+      // return HTTP 400 when Chromium/ExoPlayer requests the media with Range.
+      // Keep direct stream handling only for Apple; Android is resolved through RCH.
+      if(Lampa.Storage.field('player') !== 'inner' && file.stream && Lampa.Platform.is('apple')){
       var newfile = Lampa.Arrays.clone(file);
       newfile.method = 'play';
       newfile.url = file.stream;
-      newfile.headers = file.headers || file.stream_headers || {};
-      call(newfile, {
-        headers: newfile.headers
-      });
+      newfile.headers = getPlayHeaders(file, file, {});
+      call(newfile, {});
     }
       else if (file.method == 'play') call(file, {});
       else {
@@ -747,8 +750,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     season: file.season,
     episode: file.episode,
     voice_name: file.voice_name,
-    thumbnail: file.thumbnail,
-        headers: file.headers || file.stream_headers || {}
+    thumbnail: file.thumbnail
       };
       return play;
     };
@@ -780,7 +782,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
               var playlist = [];
               var first = _this5.toPlayElement(item);
               first.url = json.url;
-              first.headers = json_call.headers || json.headers || item.headers || item.stream_headers || {};
+              first.headers = getPlayHeaders(item, json, json_call);
               first.quality = json_call.quality || item.qualitys;
         first.segments = json_call.segments || item.segments;
               first.hls_manifest_timeout = json_call.hls_manifest_timeout || json.hls_manifest_timeout;
@@ -798,12 +800,12 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
               if (item.season) {
                 videos.forEach(function(elem) {
                   var cell = _this5.toPlayElement(elem);
+                  cell.headers = getPlayHeaders(elem, elem, {});
                   if (elem == item) cell.url = json.url;
                   else {
                     if (elem.method == 'call') {
-                      if (Lampa.Storage.field('player') !== 'inner' && elem.stream) {
+                      if (Lampa.Storage.field('player') !== 'inner') {
                         cell.url = elem.stream;
-                        cell.headers = elem.headers || elem.stream_headers || {};
             delete cell.quality;
                       } else {
                         cell.url = function(call) {
@@ -813,6 +815,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
                               cell.quality = stream_json.quality || elem.qualitys;
                 cell.segments = stream_json.segments || elem.segments;
                               cell.subtitles = stream.subtitles;
+                              cell.headers = getPlayHeaders(elem, stream, stream_json);
                               _this5.orUrlReserve(cell);
                               _this5.setDefaultQuality(cell);
                               elem.mark();
@@ -842,7 +845,14 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
               if (first.url) {
                 var element = first;
         element.isonline = true;
-                
+                if (isVkCdnUrl(element.url)) {
+                  console.warn('BWA VK CDN URL handed to player', {
+                    platform: Lampa.Platform.is('android') ? 'android' : 'other',
+                    player: Lampa.Storage.field('player'),
+                    url: element.url,
+                    hasHeaders: !!(element.headers && Object.keys(element.headers).length)
+                  });
+                }
                 Lampa.Player.play(element);
                 Lampa.Player.playlist(playlist);
         if(element.subtitles_call) _this5.loadSubtitles(element.subtitles_call)
@@ -857,7 +867,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
         onContextMenu: function onContextMenu(item, html, data, call) {
           _this5.getFileUrl(item, function(stream) {
             call({
-              file: stream && stream.url ? stream.url : '',
+              file: stream.url,
               quality: item.qualitys
             });
           }, true);
