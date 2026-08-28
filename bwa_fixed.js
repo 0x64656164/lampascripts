@@ -50,8 +50,16 @@ window.rch_nws[hostkey].typeInvoke = function rchtypeInvoke(host, call) {
       call();
     };
 
-    if (Lampa.Platform.is('android') || Lampa.Platform.is('tizen')) check(true);
-    else {
+    // Определяем, нужно ли использовать CORS для этого хоста
+    var isVkCdn = host && host.indexOf('vkcdn') !== -1 || host && host.indexOf('vkmovie') !== -1;
+    
+    if (Lampa.Platform.is('android') || Lampa.Platform.is('tizen')) {
+      check(true);
+    } else if (isVkCdn) {
+      // Для VK CDN всегда используем 'web' тип, чтобы обойти CORS
+      window.rch_nws[hostkey].type = 'web';
+      call();
+    } else {
       var net = new Lampa.Reguest();
       net.silent('https://rc.bwa.ad'.indexOf(location.host) >= 0 ? 'https://github.com/' : host + '/cors/check', function() {
         check(true);
@@ -67,9 +75,14 @@ window.rch_nws[hostkey].typeInvoke = function rchtypeInvoke(host, call) {
 window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection) {
   window.rch_nws[hostkey].typeInvoke('https://rc.bwa.ad', function() {
 
+    var isVkCdn = client && client.host && (client.host.indexOf('vkcdn') !== -1 || client.host.indexOf('vkmovie') !== -1);
+    var rchtype = Lampa.Platform.is('android') ? 'apk' : 
+                  Lampa.Platform.is('tizen') ? 'cors' : 
+                  isVkCdn ? 'web' : (window.rch_nws[hostkey].type || 'web');
+
     client.invoke("RchRegistry", {
       host: location.host,
-      rchtype: Lampa.Platform.is('android') ? 'apk' : Lampa.Platform.is('tizen') ? 'cors' : (window.rch_nws[hostkey].type || 'web'),
+      rchtype: rchtype,
       apkVersion: Lampa.Platform.is('android') ? (window.rch_nws[hostkey].apkVersion || 0) : 0,
       player: Lampa.Storage.field('player')
     });
