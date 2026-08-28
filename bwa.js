@@ -680,20 +680,26 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     this.getFileUrl = function(file, call, waiting_rch) {
       var _this = this;
       
+      // Специальная обработка для Rutube
+      if (file.url && file.url.indexOf('rutube') !== -1 && Lampa.Storage.field('player') === 'inner') {
+        // Для Rutube используем segments вместо прямого HLS URL
+        if (file.segments) {
+          var newfile = Lampa.Arrays.clone(file);
+          newfile.method = 'play';
+          newfile.url = file.segments;
+          newfile.hls = true;
+          call(newfile, {});
+          return;
+        }
+      }
+      
       if(Lampa.Storage.field('player') !== 'inner' && file.stream && Lampa.Platform.is('apple')){
         var newfile = Lampa.Arrays.clone(file);
         newfile.method = 'play';
         newfile.url = file.stream;
         call(newfile, {});
       }
-      else if (file.method == 'play') {
-        // Убеждаемся, что url - строка
-        if (typeof file.url === 'string') {
-          call(file, {});
-        } else {
-          call(false, {});
-        }
-      }
+      else if (file.method == 'play') call(file, {});
       else {
         Lampa.Loading.start(function() {
           Lampa.Loading.stop();
@@ -716,18 +722,21 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
           }
           else{
             Lampa.Loading.stop();
-            // Убеждаемся, что возвращается корректный url
-            if (json && json.url && typeof json.url === 'string') {
-              call(json, json);
-            } else {
-              call(false, {});
+            
+            // Дополнительная обработка для Rutube
+            if (json.url && json.url.indexOf('rutube') !== -1) {
+              // Добавляем специальные параметры для HLS
+              json.hls_manifest_timeout = json.hls_manifest_timeout || 5000;
+              json.hls = true;
             }
+            
+            call(json, json);
           }
         }, function() {
           Lampa.Loading.stop();
           call(false, {});
         }, false, {
-            headers: addHeaders()
+          headers: addHeaders()
         });
       }
     };
@@ -743,7 +752,8 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     season: file.season,
     episode: file.episode,
     voice_name: file.voice_name,
-    thumbnail: file.thumbnail
+    thumbnail: file.thumbnail,
+    hls: file.hls || false  // Добавляем флаг HLS
       };
       return play;
     };
@@ -774,28 +784,20 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
             if (json && json.url) {
               var playlist = [];
               var first = _this5.toPlayElement(item);
-              
-              // Убеждаемся, что url - строка, а не функция
-              if (typeof json.url === 'function') {
-                first.url = '';
-                Lampa.Noty.show(Lampa.Lang.translate('lampac_nolink'));
-                return;
-              }
-              
               first.url = json.url;
               first.headers = json_call.headers || json.headers;
               first.quality = json_call.quality || item.qualitys;
-              first.segments = json_call.segments || item.segments;
+        first.segments = json_call.segments || item.segments;
               first.hls_manifest_timeout = json_call.hls_manifest_timeout || json.hls_manifest_timeout;
               first.subtitles = json.subtitles;
-              first.subtitles_call = json_call.subtitles_call || json.subtitles_call;
-              if (json.vast && json.vast.url) {
+        first.subtitles_call = json_call.subtitles_call || json.subtitles_call;
+        if (json.vast && json.vast.url) {
                 first.vast_url = json.vast.url;
                 first.vast_msg = json.vast.msg;
                 first.vast_region = json.vast.region;
                 first.vast_platform = json.vast.platform;
                 first.vast_screen = json.vast.screen;
-              }
+        }
               _this5.orUrlReserve(first);
               _this5.setDefaultQuality(first);
               if (item.season) {
@@ -806,14 +808,14 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
                     if (elem.method == 'call') {
                       if (Lampa.Storage.field('player') !== 'inner') {
                         cell.url = elem.stream;
-                        delete cell.quality;
+            delete cell.quality;
                       } else {
                         cell.url = function(call) {
                           _this5.getFileUrl(elem, function(stream, stream_json) {
                             if (stream.url) {
                               cell.url = stream.url;
                               cell.quality = stream_json.quality || elem.qualitys;
-                              cell.segments = stream_json.segments || elem.segments;
+                cell.segments = stream_json.segments || elem.segments;
                               cell.subtitles = stream.subtitles;
                               _this5.orUrlReserve(cell);
                               _this5.setDefaultQuality(cell);
@@ -836,31 +838,20 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
                   _this5.orUrlReserve(cell);
                   _this5.setDefaultQuality(cell);
                   playlist.push(cell);
-                });
+                }); //Lampa.Player.playlist(playlist) 
               } else {
                 playlist.push(first);
               }
               if (playlist.length > 1) first.playlist = playlist;
               if (first.url) {
                 var element = first;
-                element.isonline = true;
+        element.isonline = true;
                 
-                // Проверка, что url - строка для встроенного плеера
-                if (typeof first.url === 'function') {
-                  first.url(function() {
-                    Lampa.Player.play(element);
-                    Lampa.Player.playlist(playlist);
-                    if(element.subtitles_call) _this5.loadSubtitles(element.subtitles_call);
-                    item.mark();
-                    _this5.updateBalanser(balanser);
-                  });
-                } else {
-                  Lampa.Player.play(element);
-                  Lampa.Player.playlist(playlist);
-                  if(element.subtitles_call) _this5.loadSubtitles(element.subtitles_call);
-                  item.mark();
-                  _this5.updateBalanser(balanser);
-                }
+                Lampa.Player.play(element);
+                Lampa.Player.playlist(playlist);
+        if(element.subtitles_call) _this5.loadSubtitles(element.subtitles_call)
+                item.mark();
+                _this5.updateBalanser(balanser);
               } else {
                 Lampa.Noty.show(Lampa.Lang.translate('lampac_nolink'));
               }
