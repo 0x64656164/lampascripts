@@ -709,59 +709,64 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
           else{
             Lampa.Loading.stop();
             
-            // === ПРОКСИ ДЛЯ RUTUBE И VK ===
-            if (json.url && Lampa.Storage.field('player') === 'inner') {
-              var proxyUrl = function(url) {
-                if (!url || typeof url !== 'string') return url;
-                
-                // Извлекаем реальный URL из warp.cfhttp.top
-                // Формат: http://warp.cfhttp.top/https://real-url...
-                var realUrl = url;
-                var warpMatch = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
-                if (warpMatch) {
-                  realUrl = warpMatch[1];
-                }
-                
-                // Проверяем что это Rutube или VK по реальному URL
-                var isRutube = /rutube\.(ru|com)/i.test(realUrl) || /bl\.rutube\.ru/i.test(realUrl);
-                var isVk = /vkvd\d+\.okcdn\.ru/i.test(realUrl) || 
-                           /vkuser\d+\.okcdn\.ru/i.test(realUrl) || 
-                           /vkuservideo\d+\.okcdn\.ru/i.test(realUrl) ||
-                           /vkvideo\.ru/i.test(realUrl) ||
-                           /vk\.com\/video_ext/i.test(realUrl);
-                
-                if (isRutube || isVk) {
-                  // Заменяем на наш прокси
-                  return 'https://78.17.40.156:3031/proxy?url=' + encodeURIComponent(realUrl);
-                }
-                return url;
-              };
+            // === ПРОКСИ ДЛЯ WARP.CFHTTP.TOP ===
+            // Функция для извлечения реального URL из warp-обёртки
+            var unwrapWarp = function(url) {
+              if (!url || typeof url !== 'string') return url;
+              // Формат: http://warp.cfhttp.top/https://real-url...
+              var match = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
+              return match ? match[1] : url;
+            };
+            
+            // Функция для проксирования через наш сервер
+            var proxyUrl = function(url) {
+              if (!url || typeof url !== 'string') return url;
               
-              // Проксируем основной URL
+              // Извлекаем реальный URL из warp
+              var realUrl = unwrapWarp(url);
+              
+              // Проверяем что это Rutube или VK
+              var isRutube = /rutube\.(ru|com)/i.test(realUrl) || /bl\.rutube\.ru/i.test(realUrl);
+              var isVk = /vkvd\d+\.okcdn\.ru/i.test(realUrl) || 
+                         /vkuser\d+\.okcdn\.ru/i.test(realUrl) || 
+                         /vkuservideo\d+\.okcdn\.ru/i.test(realUrl) ||
+                         /vkvideo\.ru/i.test(realUrl) ||
+                         /vk\.com\/video_ext/i.test(realUrl);
+              
+              if (isRutube || isVk) {
+                // Заменяем на наш прокси
+                return 'https://78.17.40.156:3031/proxy?url=' + encodeURIComponent(realUrl);
+              }
+              return url;
+            };
+            
+            // Проксируем основной URL
+            if (json.url) {
               json.url = proxyUrl(json.url);
-              
-              // Проксируем URL в quality
-              if (json.quality) {
-                for (var q in json.quality) {
+            }
+            
+            // Проксируем URL в quality
+            if (json.quality) {
+              for (var q in json.quality) {
+                if (json.quality.hasOwnProperty(q)) {
                   json.quality[q] = proxyUrl(json.quality[q]);
                 }
               }
-              
-              // Проксируем URL в subtitles
-              if (json.subtitles && Array.isArray(json.subtitles)) {
-                for (var i = 0; i < json.subtitles.length; i++) {
-                  if (json.subtitles[i].url) {
-                    json.subtitles[i].url = proxyUrl(json.subtitles[i].url);
-                  }
+            }
+            
+            // Проксируем URL в subtitles
+            if (json.subtitles && Array.isArray(json.subtitles)) {
+              for (var i = 0; i < json.subtitles.length; i++) {
+                if (json.subtitles[i].url) {
+                  json.subtitles[i].url = proxyUrl(json.subtitles[i].url);
                 }
               }
-              
-              // Rutube = HLS
-              var isRutube = /rutube\.(ru|com)/i.test(json.url) || /bl\.rutube\.ru/i.test(json.url);
-              if (isRutube) {
-                json.hls = true;
-                json.hls_manifest_timeout = json.hls_manifest_timeout || 30000;
-              }
+            }
+            
+            // Rutube = HLS
+            if (json.url && (/rutube\.(ru|com)/i.test(json.url) || /bl\.rutube\.ru/i.test(json.url))) {
+              json.hls = true;
+              json.hls_manifest_timeout = json.hls_manifest_timeout || 30000;
             }
             
             call(json, json);
