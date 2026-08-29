@@ -711,14 +711,22 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
             
             // === ПРОКСИ ДЛЯ RUTUBE И VK ЧЕРЕЗ НАШ СЕРВЕР ===
             if (json.url && Lampa.Storage.field('player') === 'inner') {
-              var isRutube = json.url.indexOf('rutube') !== -1;
-              var isVk = json.url.indexOf('vk') !== -1 || 
-                         json.url.indexOf('okcdn') !== -1 || 
-                         json.url.indexOf('vkvideo') !== -1;
+              var url = json.url;
+              
+              // Точные паттерны Rutube
+              var isRutube = /rutube\.(ru|com)/i.test(url) || 
+                             /bl\.rutube\.ru/i.test(url);
+              
+              // Точные паттерны VK Video CDN
+              var isVk = /vkvd\d+\.okcdn\.ru/i.test(url) || 
+                         /vkuser\d+\.okcdn\.ru/i.test(url) || 
+                         /vkuservideo\d+\.okcdn\.ru/i.test(url) ||
+                         /vkvideo\.ru/i.test(url) ||
+                         /vk\.com\/video_ext/i.test(url);
               
               if (isRutube || isVk) {
                 // Формат: /proxy?url=<urlencoded_target_url>
-                json.url = 'https://78.17.40.156:3031/proxy?url=' + encodeURIComponent(json.url);
+                json.url = 'https://78.17.40.156:3031/proxy?url=' + encodeURIComponent(url);
                 
                 // Rutube отдаёт HLS (.m3u8) — нужен флаг и увеличенный таймаут
                 if (isRutube) {
@@ -726,8 +734,7 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
                   json.hls_manifest_timeout = 30000;
                 }
                 
-                // Для VK — CORS заголовки уже добавляет прокси-сервер,
-                // но на всякий случай продублируем
+                // Для VK — CORS заголовки уже добавляет прокси-сервер
                 if (isVk) {
                   json.headers = json.headers || {};
                   json.headers['Access-Control-Allow-Origin'] = '*';
@@ -746,25 +753,25 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       }
     };
     this.toPlayElement = function(file) {
-      var play = {
-        title: file.title,
-        url: file.url,
-        quality: file.qualitys,
-        timeline: file.timeline,
-        subtitles: file.subtitles,
-        segments: file.segments,
-        callback: file.mark,
-        season: file.season,
-        episode: file.episode,
-        voice_name: file.voice_name,
-        thumbnail: file.thumbnail,
-        // Передаём HLS-параметры во внутренний плеер
-        hls: file.hls || false,
-        hls_manifest_timeout: file.hls_manifest_timeout || 30000,
-        headers: file.headers || {}
-      };
-      return play;
-    };
+  var play = {
+    title: file.title,
+    url: file.url,
+    quality: file.qualitys,
+    timeline: file.timeline,
+    subtitles: file.subtitles,
+    segments: file.segments,
+    callback: file.mark,
+    season: file.season,
+    episode: file.episode,
+    voice_name: file.voice_name,
+    thumbnail: file.thumbnail,
+    // Передаём HLS-параметры во внутренний плеер
+    hls: file.hls || false,
+    hls_manifest_timeout: file.hls_manifest_timeout || 30000,
+    headers: file.headers || {}
+  };
+  return play;
+};
     this.orUrlReserve = function(data) {
       if (data.url && typeof data.url == 'string' && data.url.indexOf(" or ") !== -1) {
         var urls = data.url.split(" or ");
