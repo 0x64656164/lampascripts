@@ -679,20 +679,6 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
     };
     this.getFileUrl = function(file, call, waiting_rch) {
       var _this = this;
-      
-      // Специальная обработка для Rutube
-      if (file.url && file.url.indexOf('rutube') !== -1 && Lampa.Storage.field('player') === 'inner') {
-        // Для Rutube используем segments вместо прямого HLS URL
-        if (file.segments) {
-          var newfile = Lampa.Arrays.clone(file);
-          newfile.method = 'play';
-          newfile.url = file.segments;
-          newfile.hls = true;
-          call(newfile, {});
-          return;
-        }
-      }
-      
       if(Lampa.Storage.field('player') !== 'inner' && file.stream && Lampa.Platform.is('apple')){
         var newfile = Lampa.Arrays.clone(file);
         newfile.method = 'play';
@@ -723,11 +709,30 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
           else{
             Lampa.Loading.stop();
             
-            // Дополнительная обработка для Rutube
-            if (json.url && json.url.indexOf('rutube') !== -1) {
-              // Добавляем специальные параметры для HLS
-              json.hls_manifest_timeout = json.hls_manifest_timeout || 5000;
-              json.hls = true;
+            // === ПРОКСИ ДЛЯ RUTUBE И VK ЧЕРЕЗ НАШ СЕРВЕР ===
+            if (json.url && Lampa.Storage.field('player') === 'inner') {
+              var isRutube = json.url.indexOf('rutube') !== -1;
+              var isVk = json.url.indexOf('vk') !== -1 || 
+                         json.url.indexOf('okcdn') !== -1 || 
+                         json.url.indexOf('vkvideo') !== -1;
+              
+              if (isRutube || isVk) {
+                // Формат: /proxy?url=<urlencoded_target_url>
+                json.url = 'https://78.17.40.156:3031/proxy?url=' + encodeURIComponent(json.url);
+                
+                // Rutube отдаёт HLS (.m3u8) — нужен флаг и увеличенный таймаут
+                if (isRutube) {
+                  json.hls = true;
+                  json.hls_manifest_timeout = 30000;
+                }
+                
+                // Для VK — CORS заголовки уже добавляет прокси-сервер,
+                // но на всякий случай продублируем
+                if (isVk) {
+                  json.headers = json.headers || {};
+                  json.headers['Access-Control-Allow-Origin'] = '*';
+                }
+              }
             }
             
             call(json, json);
@@ -747,13 +752,16 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
         quality: file.qualitys,
         timeline: file.timeline,
         subtitles: file.subtitles,
-    segments: file.segments,
+        segments: file.segments,
         callback: file.mark,
-    season: file.season,
-    episode: file.episode,
-    voice_name: file.voice_name,
-    thumbnail: file.thumbnail,
-    hls: file.hls || false  // Добавляем флаг HLS
+        season: file.season,
+        episode: file.episode,
+        voice_name: file.voice_name,
+        thumbnail: file.thumbnail,
+        // Передаём HLS-параметры во внутренний плеер
+        hls: file.hls || false,
+        hls_manifest_timeout: file.hls_manifest_timeout || 30000,
+        headers: file.headers || {}
       };
       return play;
     };
