@@ -645,187 +645,209 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
       } else this.empty();
     };
     this.parseJsonDate = function(str, name) {
-        try {
-            var html = $('<div>' + str + '</div>');
-            var elems = [];
-            html.find(name).each(function() {
-                var item = $(this);
-                var data = JSON.parse(item.attr('data-json'));
-                
-                // === ПРОКСИ ДЛЯ WARP.CFHTTP.TOP ===
-                var PROXY_URL = 'https://78.17.40.156:3031/proxy?url=';
-                
-                function unwrapWarpUrl(url) {
-                    if (!url || typeof url !== 'string') return url;
-                    var match = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
-                    return match ? match[1] : url;
-                }
-                
-                function isVkOrRutube(url) {
-                    if (!url) return false;
-                    return /vkvd\d+\.okcdn\.ru/i.test(url) || 
-                           /vkuser\d+\.okcdn\.ru/i.test(url) || 
-                           /vkuservideo\d+\.okcdn\.ru/i.test(url) ||
-                           /vkvideo\.ru/i.test(url) ||
-                           /vk\.com\/video_ext/i.test(url) ||
-                           /rutube\.(ru|com)/i.test(url) || 
-                           /bl\.rutube\.ru/i.test(url);
-                }
-                
-                function proxyUrl(url) {
-                    if (!url || typeof url !== 'string') return url;
-                    var realUrl = unwrapWarpUrl(url);
-                    if (isVkOrRutube(realUrl)) {
-                        return PROXY_URL + encodeURIComponent(realUrl);
-                    }
-                    return url;
-                }
-                
-                // Проксируем основной URL
-                if (data.url) data.url = proxyUrl(data.url);
-                
-                // Проксируем quality
-                if (data.quality) {
-                    for (var q in data.quality) {
-                        if (data.quality.hasOwnProperty(q)) {
-                            data.quality[q] = proxyUrl(data.quality[q]);
-                        }
-                    }
-                }
-                
-                // Проксируем subtitles
-                if (data.subtitles && Array.isArray(data.subtitles)) {
-                    for (var i = 0; i < data.subtitles.length; i++) {
-                        if (data.subtitles[i].url) {
-                            data.subtitles[i].url = proxyUrl(data.subtitles[i].url);
-                        }
-                    }
-                }
-                // === КОНЕЦ ПРОКСИ ===
-                
-                var season = item.attr('s');
-                var episode = item.attr('e');
-                var text = item.text();
-                if (!object.movie.name) {
-                    if (text.match(/\d+p/i)) {
-                        if (!data.quality) {
-                            data.quality = {};
-                            data.quality[text] = data.url;
-                        }
-                        text = object.movie.title;
-                    }
-                    if (text == 'По умолчанию') {
-                        text = object.movie.title;
-                    }
-                }
-                if (episode) data.episode = parseInt(episode);
-                if (season) data.season = parseInt(season);
-                if (text) data.text = text;
-                data.active = item.hasClass('active');
-                elems.push(data);
-            });
-            return elems;
-        } catch (e) {
-            return [];
+    try {
+        var html = $('<div>' + str + '</div>');
+        var elems = [];
+        var PROXY_URL = 'https://78.17.40.156:3031/proxy?url=';
+        var isInnerPlayer = Lampa.Storage.field('player') === 'inner';
+        
+        function unwrapWarpUrl(url) {
+            if (!url || typeof url !== 'string') return url;
+            var match = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
+            return match ? match[1] : url;
         }
-    };
+        
+        function isRutube(url) {
+            if (!url) return false;
+            return /rutube\.(ru|com)/i.test(url) || 
+                   /bl\.rutube\.ru/i.test(url) ||
+                   /river.*\.rutube\.ru/i.test(url) ||
+                   /rtbcdn\.ru/i.test(url);
+        }
+        
+        function isVk(url) {
+            if (!url) return false;
+            return /vkvd\d+\.okcdn\.ru/i.test(url) || 
+                   /vkuser\d+\.okcdn\.ru/i.test(url) || 
+                   /vkuservideo\d+\.okcdn\.ru/i.test(url) ||
+                   /vkvideo\.ru/i.test(url) ||
+                   /vk\.com\/video_ext/i.test(url);
+        }
+        
+        function processUrl(url) {
+            if (!url || typeof url !== 'string') return url;
+            var realUrl = unwrapWarpUrl(url);
+            
+            if (isRutube(realUrl)) {
+                if (isInnerPlayer) {
+                    return PROXY_URL + encodeURIComponent(realUrl);
+                } else {
+                    // Внешний плеер — Rutube без прокси
+                    return realUrl;
+                }
+            }
+            
+            if (isVk(realUrl)) {
+                // VK всегда через прокси (и внутренний, и внешний)
+                return PROXY_URL + encodeURIComponent(realUrl);
+            }
+            
+            return url;
+        }
+        
+        html.find(name).each(function() {
+            var item = $(this);
+            var data = JSON.parse(item.attr('data-json'));
+            
+            if (data.url) data.url = processUrl(data.url);
+            if (data.quality) {
+                for (var q in data.quality) {
+                    if (data.quality.hasOwnProperty(q)) {
+                        data.quality[q] = processUrl(data.quality[q]);
+                    }
+                }
+            }
+            if (data.subtitles && Array.isArray(data.subtitles)) {
+                for (var i = 0; i < data.subtitles.length; i++) {
+                    if (data.subtitles[i].url) {
+                        data.subtitles[i].url = processUrl(data.subtitles[i].url);
+                    }
+                }
+            }
+            
+            var season = item.attr('s');
+            var episode = item.attr('e');
+            var text = item.text();
+            if (!object.movie.name) {
+                if (text.match(/\d+p/i)) {
+                    if (!data.quality) {
+                        data.quality = {};
+                        data.quality[text] = data.url;
+                    }
+                    text = object.movie.title;
+                }
+                if (text == 'По умолчанию') {
+                    text = object.movie.title;
+                }
+            }
+            if (episode) data.episode = parseInt(episode);
+            if (season) data.season = parseInt(season);
+            if (text) data.text = text;
+            data.active = item.hasClass('active');
+            elems.push(data);
+        });
+        return elems;
+    } catch (e) {
+        return [];
+    }
     this.getFileUrl = function(file, call, waiting_rch) {
-        var _this = this;
-        if(Lampa.Storage.field('player') !== 'inner' && file.stream && Lampa.Platform.is('apple')){
-            var newfile = Lampa.Arrays.clone(file);
-            newfile.method = 'play';
-            newfile.url = file.stream;
-            call(newfile, {});
-        }
-        else if (file.method == 'play') call(file, {});
-        else {
-            Lampa.Loading.start(function() {
-                Lampa.Loading.stop();
-                Lampa.Controller.toggle('content');
-                network.clear();
-            });
-            network["native"](account(file.url), function(json) {
-                if(json.rch){
-                    if(waiting_rch) {
-                        waiting_rch = false;
-                        Lampa.Loading.stop();
-                        call(false, {});
-                    }
-                    else {
-                        _this.rch(json,function(){
-                            Lampa.Loading.stop();
-                            _this.getFileUrl(file, call, true);
-                        });
-                    }
-                }
-                else{
-                    Lampa.Loading.stop();
-                    
-                    // === ПРОКСИ ДЛЯ WARP.CFHTTP.TOP ===
-                    var PROXY_URL = 'https://78.17.40.156:3031/proxy?url=';
-                    
-                    function unwrapWarpUrl(url) {
-                        if (!url || typeof url !== 'string') return url;
-                        var match = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
-                        return match ? match[1] : url;
-                    }
-                    
-                    function isVkOrRutube(url) {
-                        if (!url) return false;
-                        return /vkvd\d+\.okcdn\.ru/i.test(url) || 
-                               /vkuser\d+\.okcdn\.ru/i.test(url) || 
-                               /vkuservideo\d+\.okcdn\.ru/i.test(url) ||
-                               /vkvideo\.ru/i.test(url) ||
-                               /vk\.com\/video_ext/i.test(url) ||
-                               /rutube\.(ru|com)/i.test(url) || 
-                               /bl\.rutube\.ru/i.test(url);
-                    }
-                    
-                    function proxyUrl(url) {
-                        if (!url || typeof url !== 'string') return url;
-                        var realUrl = unwrapWarpUrl(url);
-                        if (isVkOrRutube(realUrl)) {
-                            return PROXY_URL + encodeURIComponent(realUrl);
-                        }
-                        return url;
-                    }
-                    
-                    // Проксируем если URL ещё не проксирован
-                    if (json.url && json.url.indexOf('78.17.40.156') === -1) {
-                        json.url = proxyUrl(json.url);
-                    }
-                    if (json.quality) {
-                        for (var q in json.quality) {
-                            if (json.quality.hasOwnProperty(q) && json.quality[q].indexOf('78.17.40.156') === -1) {
-                                json.quality[q] = proxyUrl(json.quality[q]);
-                            }
-                        }
-                    }
-                    if (json.subtitles && Array.isArray(json.subtitles)) {
-                        for (var i = 0; i < json.subtitles.length; i++) {
-                            if (json.subtitles[i].url && json.subtitles[i].url.indexOf('78.17.40.156') === -1) {
-                                json.subtitles[i].url = proxyUrl(json.subtitles[i].url);
-                            }
-                        }
-                    }
-                    
-                    // Rutube = HLS
-                    if (json.url && (/rutube\.(ru|com)/i.test(json.url) || /bl\.rutube\.ru/i.test(json.url))) {
-                        json.hls = true;
-                        json.hls_manifest_timeout = json.hls_manifest_timeout || 30000;
-                    }
-                    // === КОНЕЦ ПРОКСИ ===
-                    
-                    call(json, json);
-                }
-            }, function() {
-                Lampa.Loading.stop();
-                call(false, {});
-            }, false, {
-                headers: addHeaders()
-            });
-        }
-    };
+      var _this = this;
+      if(Lampa.Storage.field('player') !== 'inner' && file.stream && Lampa.Platform.is('apple')){
+          var newfile = Lampa.Arrays.clone(file);
+          newfile.method = 'play';
+          newfile.url = file.stream;
+          call(newfile, {});
+      }
+      else if (file.method == 'play') call(file, {});
+      else {
+          Lampa.Loading.start(function() {
+              Lampa.Loading.stop();
+              Lampa.Controller.toggle('content');
+              network.clear();
+          });
+          network["native"](account(file.url), function(json) {
+              if(json.rch){
+                  if(waiting_rch) {
+                      waiting_rch = false;
+                      Lampa.Loading.stop();
+                      call(false, {});
+                  }
+                  else {
+                      _this.rch(json,function(){
+                          Lampa.Loading.stop();
+                          _this.getFileUrl(file, call, true);
+                      });
+                  }
+              }
+              else{
+                  Lampa.Loading.stop();
+                  
+                  var PROXY_URL = 'https://78.17.40.156:3031/proxy?url=';
+                  var isInnerPlayer = Lampa.Storage.field('player') === 'inner';
+                  
+                  function unwrapWarpUrl(url) {
+                      if (!url || typeof url !== 'string') return url;
+                      var match = url.match(/^https?:\/\/warp\.cfhttp\.top\/(https?:\/\/.+)/);
+                      return match ? match[1] : url;
+                  }
+                  
+                  function isRutube(url) {
+                      if (!url) return false;
+                      return /rutube\.(ru|com)/i.test(url) || 
+                             /bl\.rutube\.ru/i.test(url) ||
+                             /river.*\.rutube\.ru/i.test(url) ||
+                             /rtbcdn\.ru/i.test(url);
+                  }
+                  
+                  function isVk(url) {
+                      if (!url) return false;
+                      return /vkvd\d+\.okcdn\.ru/i.test(url) || 
+                             /vkuser\d+\.okcdn\.ru/i.test(url) || 
+                             /vkuservideo\d+\.okcdn\.ru/i.test(url) ||
+                             /vkvideo\.ru/i.test(url) ||
+                             /vk\.com\/video_ext/i.test(url);
+                  }
+                  
+                  function processUrl(url) {
+                      if (!url || typeof url !== 'string') return url;
+                      var realUrl = unwrapWarpUrl(url);
+                      
+                      if (isRutube(realUrl)) {
+                          if (isInnerPlayer) {
+                              return PROXY_URL + encodeURIComponent(realUrl);
+                          } else {
+                              return realUrl;
+                          }
+                      }
+                      
+                      if (isVk(realUrl)) {
+                          return PROXY_URL + encodeURIComponent(realUrl);
+                      }
+                      
+                      return url;
+                  }
+                  
+                  if (json.url) json.url = processUrl(json.url);
+                  if (json.quality) {
+                      for (var q in json.quality) {
+                          if (json.quality.hasOwnProperty(q)) {
+                              json.quality[q] = processUrl(json.quality[q]);
+                          }
+                      }
+                  }
+                  if (json.subtitles && Array.isArray(json.subtitles)) {
+                      for (var i = 0; i < json.subtitles.length; i++) {
+                          if (json.subtitles[i].url) {
+                              json.subtitles[i].url = processUrl(json.subtitles[i].url);
+                          }
+                      }
+                  }
+                  
+                  // HLS флаг только для внутреннего плеера с Rutube
+                  if (isInnerPlayer && json.url && isRutube(json.url)) {
+                      json.hls = true;
+                      json.hls_manifest_timeout = json.hls_manifest_timeout || 30000;
+                  }
+                  
+                  call(json, json);
+              }
+          }, function() {
+              Lampa.Loading.stop();
+              call(false, {});
+          }, false, {
+              headers: addHeaders()
+          });
+    }
     this.toPlayElement = function(file) {
       var play = {
         title: file.title,
